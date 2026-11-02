@@ -186,12 +186,11 @@ function dutyCount(p){const n=p.slips.length;return n+(n===1?' duty':' duties')}
 function row(p){return '<li><button type="button" data-p="'+esc(p.slug)+'"><span>'+nameLabel(p.name)+'</span><span class="count">'+dutyCount(p)+'</span></button></li>'}
 function showAll(){
   current=null;setHash('');
-  const inv=list.filter(p=>!p.roving),rov=list.filter(p=>p.roving);
-  out.innerHTML='<div class="group"><p class="eyebrow">Invigilators ('+inv.length+')</p><ul class="names">'+inv.map(row).join('')+'</ul></div><div class="group"><p class="eyebrow">Roving team ('+rov.length+')</p><ul class="names">'+rov.map(row).join('')+'</ul></div>';
+  out.innerHTML='<div class="none" role="status"><strong>Type at least 3 letters of your name</strong>Your duties will appear here.</div>';
 }
 function showMatches(ms,text){
   current=null;setHash('');
-  if(!ms.length){out.innerHTML='<div class="none" role="status"><strong>No name matches "'+esc(text)+'"</strong>Try your surname only, or pick your name from the list below.</div><div class="group"><ul class="names">'+list.map(row).join('')+'</ul></div>';return}
+  if(!ms.length){out.innerHTML='<div class="none" role="status"><strong>No name matches "'+esc(text)+'"</strong>Check the spelling, or try your surname only.</div>';return}
   out.innerHTML='<div class="group"><p class="eyebrow">'+ms.length+' names match. Pick yours.</p><ul class="names">'+ms.map(row).join('')+'</ul></div>';
 }
 function showPerson(p){
@@ -246,13 +245,13 @@ function setHash(s){try{const cur=location.hash.slice(1);if(cur!==s)history.repl
 function pick(p){q.value=p.name;clearBtn.hidden=false;showPerson(p);q.blur()}
 function run(){
   const text=q.value;clearBtn.hidden=!text;
-  const ms=search(text);
+  const ms=text.replace(/[^a-z]/gi,'').length<3?null:search(text);
   if(ms===null){showAll();return}
   if(ms.length===1){showPerson(ms[0]);return}
   showMatches(ms,text.trim());
 }
 q.addEventListener('input',run);
-$('f').addEventListener('submit',e=>{e.preventDefault();const ms=search(q.value);if(ms&&ms.length)pick(ms[0])});
+$('f').addEventListener('submit',e=>{e.preventDefault();if(q.value.replace(/[^a-z]/gi,'').length<3)return;const ms=search(q.value);if(ms&&ms.length)pick(ms[0])});
 clearBtn.addEventListener('click',()=>{q.value='';clearBtn.hidden=true;showAll();q.focus()});
 out.addEventListener('click',async e=>{
   const b=e.target.closest('button');if(!b)return;
