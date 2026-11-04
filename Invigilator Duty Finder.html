@@ -56,6 +56,13 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-off
 .who p{margin:4px 0 0;color:var(--muted)}
 .btn{min-height:44px;padding:8px 14px;border:1px solid var(--accent);border-radius:6px;background:var(--surface);color:var(--accent);font-weight:600;font-size:1rem;cursor:pointer}
 .btn:hover{background:var(--accent-soft)}
+details.fix{margin-top:12px}
+details.fix summary{display:inline-block;cursor:pointer;color:var(--accent);font-weight:600;padding:6px 0}
+#fixform{margin-top:8px;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:6px;display:grid;gap:12px;max-width:480px}
+#fixform input{width:100%;height:46px;border:1px solid var(--line);border-radius:6px;padding:0 12px;font:600 1.05rem var(--body);background:var(--surface);color:var(--fg)}
+#fixform input:focus-visible{outline:3px solid var(--accent);outline-offset:1px}
+#fixform .hint{margin:0;color:var(--muted);font-size:.95rem}
+#fixmsg{margin:0;font-weight:600}#fixmsg.err{color:var(--warn)}
 #copybox{width:100%;height:150px;font:400 .9rem var(--body);background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:10px}
 .week-scroll{overflow-x:auto}
 .week{width:100%;border-collapse:collapse;table-layout:fixed;background:var(--surface);min-width:340px}
@@ -136,7 +143,7 @@ for(const s of [1,2])for(const [v,names] of ROVE[s])for(const n of names){const 
 const surname=n=>n.replace(/\s*\(\d\)$/,'').split(/[\s.]+/).pop();
 const list=[...people.values()].sort((a,b)=>surname(a.name).localeCompare(surname(b.name))||a.name.localeCompare(b.name));
 const words=s=>s.toLowerCase().replace(/[().,\-]/g,' ').split(/\s+/).filter(w=>w&&!['mr','mrs','ms','miss'].includes(w));
-for(const p of list){p.tokens=words(p.name);p.slug=p.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');p.slips=slips(p);}
+for(const p of list){p.base=p.name;p.tokens=words(p.name);p.slug=p.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');p.slips=slips(p);}
 
 /* One slip per day, session and venue */
 function slips(p){
@@ -145,8 +152,8 @@ function slips(p){
   return [...map.values()].sort((a,b)=>a.d-b.d||a.s-b.s);
 }
 function colleagues(p,x){
-  if(x.rove)return x.partner?[x.partner]:[];
-  const o=new Set();for(const r of RECS)if(r[0]!==p.name&&r[2]===x.d&&r[3]===x.s&&r[6]===x.v)o.add(r[0]);return [...o];
+  if(x.rove)return x.partner?[disp(x.partner)]:[];
+  const o=new Set();for(const r of RECS)if(r[0]!==p.base&&r[2]===x.d&&r[3]===x.s&&r[6]===x.v)o.add(disp(r[0]));return [...o];
 }
 function shortVenue(v){
   if(v.startsWith('Lecture Room'))return v.includes('-')?v.replace('Lecture Room ','LR '):'LR '+v.split(' ').pop();
@@ -176,6 +183,36 @@ function search(text){
 }
 
 /* Time */
+
+/* Name corrections: people fix their own spelling; stored in a Google Sheet (see corrections-script.gs) */
+const FIX_URL='';
+const tidy=s=>s.trim().replace(/\s+/g,' ');
+const fixOk=(from,to)=>/^[A-Za-z][A-Za-z .'()\-]{2,59}$/.test(to)&&dist(from.toLowerCase(),to.toLowerCase())<=Math.max(3,Math.floor(.4*Math.max(from.length,to.length)));
+const byBase=new Map(list.map(p=>[p.base,p]));
+const disp=n=>(byBase.get(n)||{name:n}).name;
+function applyFix(p,to){p.name=to;p.tokens=[...new Set([...words(p.base),...words(to)])]}
+async function loadFixes(){
+  if(!FIX_URL)return;
+  try{const r=await fetch(FIX_URL);const fx=await r.json();let changed=false;
+    for(const p of list){const f=fx[p.slug];if(f&&f.from===p.base&&fixOk(p.base,f.to)&&f.to!==p.name){applyFix(p,f.to);changed=true}}
+    allTokens.splice(0,allTokens.length,...new Set(list.flatMap(p=>p.tokens)));
+    if(changed){if(current)showPerson(current);else run()}}
+  catch(e){}
+}
+async function sendFix(form){
+  const msg=$('fixmsg'),a=tidy(form.a.value),b=tidy(form.b.value),p=current;
+  const say=(t,err)=>{msg.textContent=t;msg.className=err?'err':''};
+  if(!a||!b)return say('Fill in both boxes.',true);
+  if(a!==b)return say('The two names do not match. Type the same spelling in both boxes.',true);
+  if(a===p.name)return say('That is already how your name is spelled here.',true);
+  if(!fixOk(p.base,a))return say('This form is for spelling fixes only. For a different name, please contact the exams office.',true);
+  const btn=form.querySelector('button');btn.disabled=true;say('Saving...');
+  try{const r=await fetch(FIX_URL,{method:'POST',body:JSON.stringify({slug:p.slug,from:p.base,to:a})});const j=await r.json();
+    if(!j.ok)throw new Error(j.error||'failed');
+    applyFix(p,a);q.value=a;showPerson(p);$('fixmsg').textContent='Saved. Your name now reads '+a+'.'}
+  catch(e){btn.disabled=false;say('Could not save right now. Check your connection and try again.',true)}
+}
+
 function nowInfo(){const n=new Date();return {now:n,today:(n.getFullYear()===2026&&n.getMonth()===10&&n.getDate()>=2&&n.getDate()<=7)?n.getDate():null}}
 function nextSlip(p){const {now}=nowInfo();return p.slips.find(x=>new Date(2026,10,x.d,SESS[x.s].end[0],SESS[x.s].end[1])>now)}
 
@@ -197,9 +234,10 @@ function showPerson(p){
   current=p;setHash(p.slug);
   const am=p.slips.filter(x=>x.s===1).length,pm=p.slips.filter(x=>x.s===2).length;
   const {today}=nowInfo(),next=nextSlip(p);
-  const others=[...p.listed].map(l=>l).filter(l=>!p.name.endsWith(l));
+  const others=[...p.listed].map(l=>l).filter(l=>!p.base.endsWith(l));
   const clashes=new Set();const seen={};for(const x of p.slips){const k=x.d+'|'+x.s;if(seen[k])clashes.add(k);seen[k]=1}
   let h='<div class="who"><div><p class="eyebrow">'+(p.roving?'Roving invigilator':'Invigilator')+'</p><h2>'+esc(p.name)+'</h2><p>'+dutyCount(p)+': '+am+(am===1?' morning, ':' mornings, ')+pm+(pm===1?' afternoon':' afternoons')+'</p>'+(others.length?'<p>Also listed as '+others.map(l=>'Mr. '+esc(l)).join(', ')+'</p>':'')+'</div><button class="btn" id="copy" type="button">Copy my schedule</button></div><textarea id="copybox" aria-label="Schedule text to copy" hidden readonly></textarea>';
+  if(FIX_URL)h+='<details class="fix"><summary>Name spelled wrong? Fix it</summary><form id="fixform" autocomplete="off"><p class="hint">Correct the spelling, then type it again to confirm.</p><div><label for="fixa">Correct spelling</label><input id="fixa" name="a" value="'+esc(p.name)+'" autocapitalize="words" spellcheck="false"></div><div><label for="fixb">Type it again</label><input id="fixb" name="b" autocapitalize="words" spellcheck="false"></div><div><button class="btn" type="submit">Save my name</button></div></form></details><p id="fixmsg" role="status"></p>';
   h+='<div class="week-scroll"><table class="week"><caption class="eyebrow" style="text-align:left">Week at a glance</caption><thead><tr><th class="rowh" scope="col"><span style="position:absolute;left:-9999px">Session</span></th>';
   for(let d=2;d<=7;d++)h+='<th scope="col"'+(d===today?' class="todaycol"':'')+'>'+DAYS[d][0]+'<span>'+d+'</span></th>';
   h+='</tr></thead><tbody>';
@@ -251,6 +289,7 @@ function run(){
   showMatches(ms,text.trim());
 }
 q.addEventListener('input',run);
+out.addEventListener('submit',e=>{if(e.target.id==='fixform'){e.preventDefault();sendFix(e.target)}});
 $('f').addEventListener('submit',e=>{e.preventDefault();if(q.value.replace(/[^a-z]/gi,'').length<3)return;const ms=search(q.value);if(ms&&ms.length)pick(ms[0])});
 clearBtn.addEventListener('click',()=>{q.value='';clearBtn.hidden=true;showAll();q.focus()});
 out.addEventListener('click',async e=>{
@@ -266,6 +305,7 @@ out.addEventListener('click',async e=>{
 function fromHash(){const s=location.hash.slice(1);const p=list.find(x=>x.slug===s);if(p){q.value=p.name;clearBtn.hidden=false;showPerson(p);return true}return false}
 window.addEventListener('hashchange',()=>{if(location.hash.slice(1)!==(current&&current.slug))fromHash()});
 if(!fromHash())showAll();
+loadFixes();
 </script>
 
 </body></html>
